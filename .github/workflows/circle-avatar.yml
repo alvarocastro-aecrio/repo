@@ -1,0 +1,60 @@
+name: Circle Avatar
+
+on:
+  repository_dispatch:
+    types: [circle-avatar]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install ImageMagick
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y imagemagick
+
+      - name: Prepare inputs
+        id: prep
+        shell: bash
+        run: |
+          URL="${{ github.event.client_payload.url }}"
+          SIZE="${{ github.event.client_payload.size || 160 }}"
+          OUT="${{ github.event.client_payload.outPath || 'public/avatars/output.png' }}"
+          # compatível com seu código: troca domínio antigo
+          URL="${URL/repo.clarte.cnt.br/repo.aec.rio}"
+          echo "url=$URL"   >> $GITHUB_OUTPUT
+          echo "size=$SIZE" >> $GITHUB_OUTPUT
+          echo "out=$OUT"   >> $GITHUB_OUTPUT
+          mkdir -p "$(dirname "$OUT")"
+
+      - name: Download
+        run: |
+          curl -L --fail "${{ steps.prep.outputs.url }}" -o /tmp/input
+
+      - name: Process to circular PNG
+        run: |
+          S="${{ steps.prep.outputs.size }}"
+          convert /tmp/input -resize ${S}x${S}^ -gravity center -extent ${S}x${S} \
+            \( -size ${S}x${S} xc:none -fill white -draw "circle $((S/2)),$((S/2)) $((S/2)),0" \) \
+            -compose copyopacity -composite \
+            -alpha on -background none \
+            "${{ steps.prep.outputs.out }}"
+
+      - name: Commit output
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add "${{ steps.prep.outputs.out }}"
+          git commit -m "build: avatar pronto [skip ci]" || echo "Sem mudanças"
+          git push
+
+      - name: Upload artifact (opc.)
+        uses: actions/upload-artifact@v4
+        with:
+          name: avatar
+          path: ${{ steps.prep.outputs.out }}
